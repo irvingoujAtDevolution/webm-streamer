@@ -1,10 +1,14 @@
 import React, { useRef, useState, useEffect } from "react";
 import "./App.css";
 import VideoPlayer from "./VideoPlayer";
-
-const API_LIST_RECORDINGS = "http://localhost:3000/jet/jrec/list-recording";
-const API_PULL_RECORDING = "http://localhost:3000/jet/jrec/pull";
-const API_TEST_PULL_RECORDING = "http://localhost:3000/jet/jrec/test";
+const HOST = "http://localhost:3000";
+// const HOST = "https://work.tailf4f4d.ts.net";
+const API_LIST_RECORDINGS = `${HOST}/jet/jrec/list-recording`;
+const API_PULL_RECORDING = `${HOST}/jet/jrec/pull`;
+const API_TEST_PULL_RECORDING = `${HOST}/jet/jrec/test`;
+// const API_LIST_RECORDINGS = "http://localhost:3000/jet/jrec/list-recording";
+// const API_PULL_RECORDING = "http://localhost:3000/jet/jrec/pull";
+// const API_TEST_PULL_RECORDING = "http://localhost:3000/jet/jrec/test";
 
 // Define the type for a recording tuple
 type Recording = [filename: string, date: string];

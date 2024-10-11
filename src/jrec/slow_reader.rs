@@ -41,7 +41,7 @@ impl FileReaderCandidate {
     }
 }
 
-const MAX_SIZE_PER_REQUEST: u64 = 1024 * 5;
+const MAX_SIZE_PER_REQUEST: u64 = 1024 * 10;
 
 impl RangeBody for FileReaderCandidate {
     fn byte_size(&self) -> Option<u64> {

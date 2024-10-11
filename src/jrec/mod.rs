@@ -10,9 +10,11 @@ use axum_extra::TypedHeader;
 use hyper::StatusCode;
 use recording::ClientPush;
 use slow_reader::FileReaderCandidate;
+use streaming::test_stream;
 use tokio::fs::File;
 use tracing::info;
 use utils::{find_recording, get_latestest_recording, get_recording_list};
+use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 use ws::websocket_compat;
 
 use crate::axum_range::{KnownSize, Ranged};
@@ -52,17 +54,19 @@ async fn get_path(query: Query<RecordingQuery>) -> Result<PathBuf, StatusCode> {
     }
 }
 
-async fn test(
-    range: Option<TypedHeader<Range>>,
-    query: Query<RecordingQuery>,
-) -> Result<Ranged<FileReaderCandidate>, StatusCode> {
+async fn test(ws: WebSocketUpgrade, query: Query<RecordingQuery>) -> Result<Response, StatusCode> {
     let path = get_path(query).await?;
 
-    let reader = FileReaderCandidate::open(path)
+    let file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_WRITE | FILE_SHARE_READ)
+        .open(&path)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Ranged::new(range.map(|TypedHeader(range)| range), reader))
+    let response = ws.on_upgrade(move |socket| test_stream(file, socket));
+
+    Ok(response)
 }
 
 async fn stream_file(
