@@ -1453,6 +1453,7 @@ dependencies = [
  "tracing-subscriber",
  "typed-builder",
  "uuid",
+ "winapi",
 ]
 
 [[package]]

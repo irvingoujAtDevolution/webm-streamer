@@ -9,6 +9,9 @@ use tokio::{
 };
 use tracing::info;
 use typed_builder::TypedBuilder;
+use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+
+use crate::utils::FileWithLoggin;
 
 pub const RECORDING_DIR: LazyCell<Arc<PathBuf>> = LazyCell::new(|| {
     let home_dir = dirs::home_dir().expect("home directory");
@@ -44,19 +47,18 @@ where
 
         let mut open_options = fs::OpenOptions::new();
 
-        open_options
-            .read(true)
+        let open_options = open_options
+            .read(false)
             .write(true)
             .truncate(true)
-            .create(true);
-
-        const FILE_SHARE_READ: u32 = 1;
-        open_options.share_mode(FILE_SHARE_READ);
+            .create(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE);
 
         info!("Opening file for recording");
 
         let res = match open_options.open(&recording_file).await {
             Ok(file) => {
+                let file = FileWithLoggin::new(file);
                 let mut file = BufWriter::new(file);
 
                 let copy_fut = io::copy(&mut client_stream, &mut file);

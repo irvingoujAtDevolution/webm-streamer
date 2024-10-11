@@ -8,6 +8,7 @@ use http_body::{Body, SizeHint, Frame};
 use futures::Stream;
 use pin_project::pin_project;
 use tokio::io::ReadBuf;
+use tracing::{debug, info};
 
 use super::RangeBody;
 
@@ -25,6 +26,7 @@ pub struct RangedStream<B> {
 
 impl<B: RangeBody + Send + 'static> RangedStream<B> {
     pub(crate) fn new(body: B, start: u64, length: u64) -> Self {
+        info!(start, length, "Creating RangedStream");
         RangedStream {
             state: StreamState::Seek { start },
             length,
@@ -110,6 +112,7 @@ impl<B: RangeBody> Stream for RangedStream<B> {
                     match read_buf.filled().len() {
                         0 => { return Poll::Ready(None); }
                         n => {
+                            debug!(read_len=n, "Read bytes");
                             // SAFETY: poll_read has filled the buffer with `n`
                             // additional bytes. `buffer.len` should always be
                             // 0 here, but include it for rigorous correctness

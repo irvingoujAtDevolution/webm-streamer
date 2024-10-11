@@ -1,15 +1,6 @@
 use std::path::PathBuf;
 
-use axum::extract::WebSocketUpgrade;
-use axum::response::Response;
-use axum::routing::get;
-use axum::{body::Body, extract::ws::WebSocket};
-use axum::{Json, Router};
-use axum_extra::headers::Range;
-use axum_extra::TypedHeader;
-use hyper::{Request, StatusCode};
-use tokio::fs::File;
-use tracing::info;
+use hyper::StatusCode;
 
 use super::recording::RECORDING_DIR;
 

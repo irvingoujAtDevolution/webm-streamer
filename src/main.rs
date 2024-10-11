@@ -1,5 +1,7 @@
 use anyhow::Context;
-use axum::Router;
+use axum::{http::HeaderName, Router};
+use axum_extra::TypedHeader;
+use hyper::header::CONTENT_TYPE;
 use tokio::net::TcpListener;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -11,7 +13,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub mod axum_range;
 pub mod jrec;
 pub mod transport;
-
+pub mod utils;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -30,7 +32,11 @@ async fn main() -> anyhow::Result<()> {
     let router = jrec::make_router();
     let app = Router::new()
         .nest("/", router)
-        .layer(CorsLayer::new().allow_origin(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_headers([CONTENT_TYPE]),
+        )
         .layer(TraceLayer::new_for_http());
 
     let listener = TcpListener::bind("127.0.0.1:3000")
