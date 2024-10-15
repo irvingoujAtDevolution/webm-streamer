@@ -6,6 +6,9 @@ use tokio::{
 };
 use tracing::debug;
 
+pub mod state;
+pub mod recording_manager;
+
 pub struct FileWithLoggin {
     file: File,
 }

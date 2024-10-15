@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use axum::extract::{Query, WebSocketUpgrade};
+use axum::extract::{Query, State, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::get;
 use axum::{body::Body, extract::ws::WebSocket};
@@ -10,7 +10,7 @@ use axum_extra::TypedHeader;
 use hyper::StatusCode;
 use recording::ClientPush;
 use slow_reader::FileReaderCandidate;
-use streaming::test_stream;
+use streaming::{test_stream, StreamFile};
 use tokio::fs::File;
 use tracing::info;
 use utils::{find_recording, get_latestest_recording, get_recording_list};
@@ -18,6 +18,7 @@ use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 use ws::websocket_compat;
 
 use crate::axum_range::{KnownSize, Ranged};
+use crate::utils::state::AppState;
 
 pub mod recording;
 pub mod slow_reader;
@@ -25,7 +26,7 @@ pub mod streaming;
 pub mod utils;
 pub mod ws;
 
-pub fn make_router() -> Router {
+pub fn make_router() -> Router<AppState> {
     let router = Router::new()
         .route("/push", get(jrec_push))
         .route("/test", get(test))
@@ -54,17 +55,17 @@ async fn get_path(query: Query<RecordingQuery>) -> Result<PathBuf, StatusCode> {
     }
 }
 
-async fn test(ws: WebSocketUpgrade, query: Query<RecordingQuery>) -> Result<Response, StatusCode> {
+async fn test(
+    ws: WebSocketUpgrade,
+    query: Query<RecordingQuery>,
+    State(state): State<AppState>,
+) -> Result<Response, StatusCode> {
     let path = get_path(query).await?;
-
-    let file = tokio::fs::OpenOptions::new()
-        .read(true)
-        .share_mode(FILE_SHARE_WRITE | FILE_SHARE_READ)
-        .open(&path)
+    let file = StreamFile::open(path.clone())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let response = ws.on_upgrade(move |socket| test_stream(file, socket));
+    let response =
+        ws.on_upgrade(move |socket| test_stream(file, socket, state.recording_manager()));
 
     Ok(response)
 }
@@ -88,18 +89,20 @@ async fn stream_file(
     Ok(Ranged::new(range, file))
 }
 
-async fn jrec_push(ws: WebSocketUpgrade) -> Result<Response, StatusCode> {
+async fn jrec_push(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> Result<Response, StatusCode> {
     tracing::info!("JREC push request");
-    let response = ws.on_upgrade(handle_jrec_push);
+    let response = ws.on_upgrade(|socket| handle_jrec_push(socket, state));
     Ok(response)
 }
 
-async fn handle_jrec_push(ws: WebSocket) {
-    let (shutdown_signal, receiver) = tokio::sync::mpsc::channel(1);
+async fn handle_jrec_push(ws: WebSocket, state: AppState) {
     tracing::info!("Upgrade to websocket");
     let result = ClientPush::builder()
         .client_stream(websocket_compat(ws))
-        .shutdown_signal(receiver)
+        .recording_manager(state.recording_manager())
         .build()
         .run()
         .await;

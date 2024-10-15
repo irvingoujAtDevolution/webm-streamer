@@ -14,6 +14,7 @@ use tower_http::{
 };
 use tracing::{info, Span};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utils::state::AppState;
 
 pub mod axum_range;
 pub mod jrec;
@@ -35,8 +36,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let router = jrec::make_router();
+    let state = AppState::new();
     let app = Router::new()
         .nest("/", router)
+        .with_state(state)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any) // Allow any origin
@@ -62,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
                      span: &Span| {
                         let status = response.status();
                         // Log errors for non-2xx responses
-                        if !(200..300).contains(&status.as_u16()) {
+                        if !(100..300).contains(&status.as_u16()) {
                             tracing::error!(status = %status, "Non-2xx response");
                         } else {
                             tracing::info!(status = %status, "2xx response");
@@ -82,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("listening on {}", listener.local_addr()?);
 
-    axum::serve(listener, app.into_make_service())
+    axum::serve(listener, app)
         .await
         .context("running server")
 }

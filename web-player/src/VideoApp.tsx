@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import "./App.css";
 import VideoPlayer from "./VideoPlayer";
+import WSVideoPlayer from "./WebSocketVideoPlayer";
 const HOST = "http://localhost:3000";
 // const HOST = "https://work.tailf4f4d.ts.net";
 const API_LIST_RECORDINGS = `${HOST}/jet/jrec/list-recording`;
@@ -46,12 +47,7 @@ function RecordingsList({
 function VideoApp() {
 	const [recordings, setRecordings] = useState<Recording[]>([]);
 	const [recordingToPlay, setRecordingToPlay] = useState<string | null>(null);
-
-	const fetchRecordings = async () => {
-		const response = await fetch(API_LIST_RECORDINGS);
-		const data: Recording[] = await response.json();
-		setRecordings(data);
-	};
+	const [useTest, setUseTest] = useState<boolean>(false);
 
 	const openRecordingInPopup = (recording: string, test = false) => {
 		const popupWidth = 800;
@@ -75,12 +71,18 @@ function VideoApp() {
 	};
 
 	useEffect(() => {
+		const fetchRecordings = async () => {
+			const response = await fetch(API_LIST_RECORDINGS);
+			const data: Recording[] = await response.json();
+			setRecordings(data);
+		};
 		const urlParams = new URLSearchParams(window.location.search);
 		const recording = urlParams.get("recording");
 		const test = urlParams.get("test") === "true";
 		const api = test ? API_TEST_PULL_RECORDING : API_PULL_RECORDING;
 		if (recording) {
 			setRecordingToPlay(`${api}?recording=${encodeURIComponent(recording)}`);
+			setUseTest(test);
 		} else {
 			fetchRecordings();
 		}
@@ -88,14 +90,22 @@ function VideoApp() {
 
 	return (
 		<div className="container">
-			{recordingToPlay ? (
-				<VideoPlayer recordingToPlay={recordingToPlay} />
-			) : (
-				<RecordingsList
-					recordings={recordings}
-					openRecordingInPopup={openRecordingInPopup}
-				/>
-			)}
+			{(() => {
+				if (recordingToPlay && !useTest) {
+					return <VideoPlayer recordingToPlay={recordingToPlay} />;
+				}
+
+				if (recordingToPlay && useTest) {
+					return <WSVideoPlayer recordingToPlay={recordingToPlay} />;
+				}
+
+				return (
+					<RecordingsList
+						recordings={recordings}
+						openRecordingInPopup={openRecordingInPopup}
+					/>
+				);
+			})()}
 		</div>
 	);
 }

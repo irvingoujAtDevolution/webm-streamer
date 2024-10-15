@@ -11,7 +11,7 @@ use tracing::info;
 use typed_builder::TypedBuilder;
 use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 
-use crate::utils::FileWithLoggin;
+use crate::utils::{recording_manager::RecordingManager, FileWithLoggin};
 
 pub const RECORDING_DIR: LazyCell<Arc<PathBuf>> = LazyCell::new(|| {
     let home_dir = dirs::home_dir().expect("home directory");
@@ -25,7 +25,7 @@ pub const RECORDING_DIR: LazyCell<Arc<PathBuf>> = LazyCell::new(|| {
 #[derive(TypedBuilder)]
 pub struct ClientPush<S> {
     client_stream: S,
-    shutdown_signal: mpsc::Receiver<()>,
+    recording_manager: Arc<RecordingManager>,
 }
 
 impl<S> ClientPush<S>
@@ -36,14 +36,16 @@ where
         info!("Starting JREC push");
         let Self {
             mut client_stream,
-            mut shutdown_signal,
+            recording_manager,
         } = self;
         let date = Local::now();
         let recording_file_name = format!("{}.webm", date.format("%d_%H_%M_%S"));
-
-        let recording_file = RECORDING_DIR.as_ref().join(recording_file_name);
+        let recording_file = RECORDING_DIR.as_ref().join(&recording_file_name);
 
         info!("Recording to file: {:?}", recording_file);
+        let mut shutdown_signal = recording_manager
+            .start_recording(recording_file.clone())
+            .await;
 
         let mut open_options = fs::OpenOptions::new();
 
@@ -67,7 +69,7 @@ where
                     res = copy_fut => {
                         res.context("JREC streaming to file").map(|_| ())
                     },
-                    _ = shutdown_signal.recv() => {
+                    _ = shutdown_signal.wait_for_stop() => {
                         client_stream.shutdown().await.context("shutdown client stream")
                     },
                 }
@@ -77,6 +79,7 @@ where
             }
             Err(e) => Err(anyhow::Error::new(e).context("failed to open file".to_string())),
         };
+
         res
     }
 }
