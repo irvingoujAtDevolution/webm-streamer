@@ -2,6 +2,7 @@
 name = "webm-streamer"
 version = "0.1.0"
 edition = "2021"
+default-run = "webm-streamer"
 
 [dependencies]
 anyhow = "1.0.89"
@@ -9,12 +10,14 @@ axum = { version = "0.7.7", features = ["tracing", "ws"] }
 axum-extra = { version = "0.9.4", features = ["typed-header"] }
 bytes = "1.7.2"
 chrono = "0.4.38"
+clap = { version = "4.5.20", features = ["derive", "env"] }
 dirs = "5.0.1"
 futures = "0.3.31"
 futures-core = "0.3.31"
 futures-sink = "0.3.31"
 http-body = "1.0.1"
 hyper = "1.4.1"
+notify = "6.1.1"
 pin-project = "1.1.6"
 pin-project-lite = "0.2.14"
 serde = { version = "1.0.210", features = ["derive"] }
@@ -27,4 +30,5 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 typed-builder = "0.20.0"
 uuid = { version = "1.10.0", features = ["v4"] }
+webm-iterable = { version = "0.6.2", features = ["futures"] }
 winapi = { version = "0.3.9", features = ["winnt"] }

@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use pin_project::pin_project;
-use tokio::io::{ReadBuf, AsyncRead, AsyncSeek, AsyncSeekExt};
+use tokio::io::{AsyncRead, AsyncSeek, AsyncSeekExt, ReadBuf};
 
 use super::{AsyncSeekStart, RangeBody};
 
@@ -19,7 +19,10 @@ impl KnownSize<tokio::fs::File> {
     /// Calls [`tokio::fs::File::metadata`] to determine file size.
     pub async fn file(file: tokio::fs::File) -> io::Result<KnownSize<tokio::fs::File>> {
         let byte_size = file.metadata().await?.len();
-        Ok(KnownSize { byte_size, body: file })
+        Ok(KnownSize {
+            byte_size,
+            body: file,
+        })
     }
 }
 
@@ -50,18 +53,12 @@ impl<B: AsyncRead + AsyncSeekStart> AsyncRead for KnownSize<B> {
 }
 
 impl<B: AsyncRead + AsyncSeekStart> AsyncSeekStart for KnownSize<B> {
-    fn start_seek(
-        self: Pin<&mut Self>,
-        position: u64,
-    ) -> io::Result<()> {
+    fn start_seek(self: Pin<&mut Self>, position: u64) -> io::Result<()> {
         let this = self.project();
         this.body.start_seek(position)
     }
 
-    fn poll_complete(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.project();
         this.body.poll_complete(cx)
     }
@@ -71,7 +68,7 @@ impl<B: AsyncRead + AsyncSeekStart> RangeBody for KnownSize<B> {
     fn byte_size(&self) -> Option<u64> {
         Some(self.byte_size)
     }
-    
+
     fn max_size_per_request(&self) -> u64 {
         1024 * 1024 * 10
     }
@@ -79,8 +76,8 @@ impl<B: AsyncRead + AsyncSeekStart> RangeBody for KnownSize<B> {
 
 #[cfg(test)]
 mod tests {
-    use tokio::fs::File;
     use crate::axum_range::RangeBody;
+    use tokio::fs::File;
 
     use super::KnownSize;
 

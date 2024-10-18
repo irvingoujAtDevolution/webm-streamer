@@ -1,12 +1,14 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import "./App.css";
 import VideoPlayer from "./VideoPlayer";
-import WSVideoPlayer from "./WebSocketVideoPlayer";
+import TestVideoPlayer from "./TestVideoPlayer";
+import StreamingVideoPlayer from "./StreamingVideoPlayer";
 const HOST = "http://localhost:3000";
 // const HOST = "https://work.tailf4f4d.ts.net";
 const API_LIST_RECORDINGS = `${HOST}/jet/jrec/list-recording`;
 const API_PULL_RECORDING = `${HOST}/jet/jrec/pull`;
 const API_TEST_PULL_RECORDING = `${HOST}/jet/jrec/test`;
+const API_STREAMING_PULL_RECORDING = `${HOST}/jet/jrec/stream-realtime`;
 // const API_LIST_RECORDINGS = "http://localhost:3000/jet/jrec/list-recording";
 // const API_PULL_RECORDING = "http://localhost:3000/jet/jrec/pull";
 // const API_TEST_PULL_RECORDING = "http://localhost:3000/jet/jrec/test";
@@ -17,7 +19,7 @@ type Recording = [filename: string, date: string];
 // RecordingsList Component Props Interface
 interface RecordingsListProps {
 	recordings: Recording[];
-	openRecordingInPopup: (recording: string, test?: boolean) => void;
+	openRecordingInPopup: (recording: string, mode?: Mode) => void;
 }
 
 // RecordingsList Component
@@ -32,9 +34,14 @@ function RecordingsList({
 				{recordings.map(([filename, date]) => (
 					<li key={filename}>
 						{date} - {filename}
-						<button onClick={() => openRecordingInPopup(filename)}>Play</button>
-						<button onClick={() => openRecordingInPopup(filename, true)}>
+						<button onClick={() => openRecordingInPopup(filename, "play")}>
+							Play
+						</button>
+						<button onClick={() => openRecordingInPopup(filename, "test")}>
 							Play Test
+						</button>
+						<button onClick={() => openRecordingInPopup(filename, "stream")}>
+							Play Stream
 						</button>
 					</li>
 				))}
@@ -43,13 +50,15 @@ function RecordingsList({
 	);
 }
 
+type Mode = "play" | "test" | "stream";
+
 // Main VideoApp Component
 function VideoApp() {
 	const [recordings, setRecordings] = useState<Recording[]>([]);
 	const [recordingToPlay, setRecordingToPlay] = useState<string | null>(null);
-	const [useTest, setUseTest] = useState<boolean>(false);
+	const [currentMode, setCurrentMode] = useState<Mode>("play");
 
-	const openRecordingInPopup = (recording: string, test = false) => {
+	const openRecordingInPopup = (recording: string, mode: Mode = "play") => {
 		const popupWidth = 800;
 		const popupHeight = 600;
 		const left = (window.screen.width - popupWidth) / 2;
@@ -57,7 +66,7 @@ function VideoApp() {
 
 		const urlParams = new URLSearchParams();
 		urlParams.append("recording", recording);
-		urlParams.append("test", String(test));
+		urlParams.append("mode", mode);
 
 		const popupWindow = window.open(
 			`${window.location.origin}${window.location.pathname}?${urlParams.toString()}`,
@@ -78,11 +87,21 @@ function VideoApp() {
 		};
 		const urlParams = new URLSearchParams(window.location.search);
 		const recording = urlParams.get("recording");
-		const test = urlParams.get("test") === "true";
-		const api = test ? API_TEST_PULL_RECORDING : API_PULL_RECORDING;
+		const mode = urlParams.get("mode") as Mode;
+		const api = (() => {
+			if (mode === "stream") {
+				return API_STREAMING_PULL_RECORDING;
+			}
+			if (mode === "test") {
+				return API_TEST_PULL_RECORDING;
+			}
+			if (mode === "play") {
+				return API_PULL_RECORDING;
+			}
+		})();
 		if (recording) {
 			setRecordingToPlay(`${api}?recording=${encodeURIComponent(recording)}`);
-			setUseTest(test);
+			setCurrentMode(mode);
 		} else {
 			fetchRecordings();
 		}
@@ -91,12 +110,16 @@ function VideoApp() {
 	return (
 		<div className="container">
 			{(() => {
-				if (recordingToPlay && !useTest) {
-					return <VideoPlayer recordingToPlay={recordingToPlay} />;
+				if (recordingToPlay && currentMode === "play") {
+					return <VideoPlayer recordingUrl={recordingToPlay} />;
 				}
 
-				if (recordingToPlay && useTest) {
-					return <WSVideoPlayer recordingToPlay={recordingToPlay} />;
+				if (recordingToPlay && currentMode === "test") {
+					return <TestVideoPlayer recordingUrl={recordingToPlay} />;
+				}
+
+				if (recordingToPlay && currentMode === "stream") {
+					return <StreamingVideoPlayer recordingUrl={recordingToPlay} />;
 				}
 
 				return (

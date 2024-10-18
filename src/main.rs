@@ -2,11 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use axum::{http::HeaderName, Router};
-use axum_extra::TypedHeader;
-use hyper::{
-    header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE},
-    Request,
-};
+use hyper::Request;
 use tokio::net::TcpListener;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -74,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
                             .headers()
                             .get(HeaderName::from_static("access-control-allow-origin"));
                         tracing::info!(cors = ?cors, "CORS header");
-                        span.record("status_code", &status.as_u16());
+                        span.record("status_code", status.as_u16());
                     },
                 ),
         );
@@ -85,7 +81,5 @@ async fn main() -> anyhow::Result<()> {
 
     info!("listening on {}", listener.local_addr()?);
 
-    axum::serve(listener, app)
-        .await
-        .context("running server")
+    axum::serve(listener, app).await.context("running server")
 }

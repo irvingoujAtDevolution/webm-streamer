@@ -44,7 +44,11 @@ where
     S: Stream<Item = Result<WsMessage, E>>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         let mut this = self.project();
 
         let mut data = if let Some(data) = this.read_buf.take() {
@@ -59,7 +63,9 @@ where
                         WsMessage::Ignored => {}
                         WsMessage::Close => return Poll::Ready(Ok(())),
                     },
-                    Some(Err(e)) => return Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+                    Some(Err(e)) => {
+                        return Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)))
+                    }
                     None => return Poll::Ready(Ok(())),
                 }
             }
@@ -86,7 +92,11 @@ where
     S: Sink<Vec<u8>, Error = E>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
         macro_rules! try_in_poll {
             ($expr:expr) => {{
                 match $expr {
@@ -123,7 +133,9 @@ where
     }
 }
 
-fn to_io_result<E: std::error::Error + Send + Sync + 'static>(res: Result<(), E>) -> io::Result<()> {
+fn to_io_result<E: std::error::Error + Send + Sync + 'static>(
+    res: Result<(), E>,
+) -> io::Result<()> {
     match res {
         Ok(()) => Ok(()),
         Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),

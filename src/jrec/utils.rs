@@ -71,7 +71,6 @@ pub async fn get_recording_list() -> Result<Vec<(String, String)>, StatusCode> {
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
             .as_secs();
 
-
         let name = recording.file_name().to_string_lossy().to_string();
 
         if !name.ends_with(".webm") {
@@ -81,15 +80,17 @@ pub async fn get_recording_list() -> Result<Vec<(String, String)>, StatusCode> {
         recording_list.push((name, time));
     }
 
-
     //sort the recording list by time, newest first
     recording_list.sort_by(|a, b| b.1.cmp(&a.1));
 
-    let recording_list = recording_list.into_iter().map(|(name, time)| {
-        let time = chrono::DateTime::from_timestamp(time as i64, 0).unwrap();
-        (name, time.to_string())
-    }).collect();
-    
+    let recording_list = recording_list
+        .into_iter()
+        .map(|(name, time)| {
+            let time = chrono::DateTime::from_timestamp(time as i64, 0).unwrap();
+            (name, time.to_string())
+        })
+        .collect();
+
     Ok(recording_list)
 }
 

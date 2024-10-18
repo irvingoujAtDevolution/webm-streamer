@@ -1,12 +1,8 @@
 import "./App.css";
-
-// VideoPlayer Component Props Interface
-interface VideoPlayerProps {
-	recordingToPlay: string;
-}
+import type { VideoPlayerProps } from "./TestVideoPlayer";
 
 // VideoPlayer Component with Media Source API
-export default function VideoPlayer({ recordingToPlay }: VideoPlayerProps) {
+export default function VideoPlayer({ recordingUrl: recordingToPlay }: VideoPlayerProps) {
 	return (
 		<div className="video-container">
 			<video width="640" height="360" controls>

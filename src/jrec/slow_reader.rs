@@ -83,7 +83,7 @@ impl AsyncRead for FileReaderCandidate {
             }
             Poll::Ready(Ok(())) => {
                 // end of file, we don't want this, we want to keep the connection open so we can stream the file
-                if buf.filled().len() == 0
+                if buf.filled().is_empty()
                     || buf.filled().len() == lenth_before_fill
                     || buf.filled().len() < MAX_SIZE_PER_REQUEST as usize
                 {

@@ -9,12 +9,11 @@ use axum_extra::headers::Range;
 use axum_extra::TypedHeader;
 use hyper::StatusCode;
 use recording::ClientPush;
-use slow_reader::FileReaderCandidate;
-use streaming::{test_stream, StreamFile};
+use streaming::realtime::handle_realtime_stream;
+use streaming::test_stream;
 use tokio::fs::File;
 use tracing::info;
 use utils::{find_recording, get_latestest_recording, get_recording_list};
-use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 use ws::websocket_compat;
 
 use crate::axum_range::{KnownSize, Ranged};
@@ -24,12 +23,14 @@ pub mod recording;
 pub mod slow_reader;
 pub mod streaming;
 pub mod utils;
+pub mod webm;
 pub mod ws;
 
 pub fn make_router() -> Router<AppState> {
     let router = Router::new()
         .route("/push", get(jrec_push))
         .route("/test", get(test))
+        .route("/stream-realtime", get(stream_realtime))
         .route("/stream-file", get(stream_file))
         .route("/list-recording", get(list_recording))
         .route("/pull", get(pull_recording_file));
@@ -61,11 +62,8 @@ async fn test(
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
     let path = get_path(query).await?;
-    let file = StreamFile::open(path.clone())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response =
-        ws.on_upgrade(move |socket| test_stream(file, socket, state.recording_manager()));
+        ws.on_upgrade(move |socket| test_stream(path, socket, state.recording_manager()));
 
     Ok(response)
 }
@@ -121,4 +119,15 @@ async fn pull_recording_file(query: Query<RecordingQuery>) -> Result<Response, S
     ));
 
     Ok(Response::new(body))
+}
+
+async fn stream_realtime(
+    query: Query<RecordingQuery>,
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> Result<Response, StatusCode> {
+    // We assume this path is a recording file and exist
+    let path = get_path(query).await?;
+    let response = ws.on_upgrade(|socket| handle_realtime_stream(path, socket, state));
+    Ok(response)
 }

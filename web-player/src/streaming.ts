@@ -11,7 +11,7 @@ export interface Metadata {
 }
 
 export type ServerResponse =
-	| { type: "Chunk"; metadata: Metadata ; data: Uint8Array }
+	| { type: "Chunk"; metadata: Metadata | null; data: Uint8Array }
 	| { type: "EOF" };
 
 export function tryToServerResponse(data: Uint8Array): ServerResponse | null {
@@ -54,10 +54,6 @@ export function tryToServerResponse(data: Uint8Array): ServerResponse | null {
 			}
 		}
 
-        if (!metadata) {
-            return null; // Invalid data, metadata is required
-        }
-
 		// The rest of the data is the actual payload
 		const chunkData = data.slice(offset);
 		return { type: "Chunk", metadata, data: chunkData };
@@ -71,6 +67,10 @@ export class WebSocketWrapper {
 
 	constructor(url: string) {
 		this.websocket = new WebSocket(url);
+	}
+
+	status() {
+		return this.websocket.readyState;
 	}
 
 	onOpen(callback: (event: Event) => void) {
@@ -113,5 +113,9 @@ export class WebSocketWrapper {
 				reject(event);
 			};
 		});
+	}
+
+	onClose(callback: (event: CloseEvent) => void) {
+		this.websocket.onclose = callback;
 	}
 }
