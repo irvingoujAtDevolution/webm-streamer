@@ -28,7 +28,11 @@ async fn main() -> anyhow::Result<()> {
                 .into()
             }),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_file(true)
+                .with_line_number(true),
+        )
         .init();
 
     let router = jrec::make_router();
