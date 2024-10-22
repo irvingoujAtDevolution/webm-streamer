@@ -83,10 +83,16 @@ pub async fn get_recording_list() -> Result<Vec<(String, String)>, StatusCode> {
     //sort the recording list by time, newest first
     recording_list.sort_by(|a, b| b.1.cmp(&a.1));
 
+
+    // tranclate the list to only the nearest 10 recordings
+
     let recording_list = recording_list
         .into_iter()
+        .take(10)
         .map(|(name, time)| {
             let time = chrono::DateTime::from_timestamp(time as i64, 0).unwrap();
+            // make the time local
+            let time = time.with_timezone(&chrono::Local);
             (name, time.to_string())
         })
         .collect();

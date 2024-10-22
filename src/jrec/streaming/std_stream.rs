@@ -1,22 +1,27 @@
 use std::{
     fmt::Debug,
     future::Future,
+    pin::Pin,
     sync::{atomic::AtomicI16, Arc},
+    task::{Context, Poll},
 };
 
-use tokio::{io::AsyncReadExt, sync::Mutex};
-use tracing::debug;
+use futures::FutureExt;
+use tokio::{
+    io::{AsyncReadExt, ReadBuf},
+    sync::{mpsc, Mutex},
+};
+use tracing::{debug, info, warn};
 
 const NAME: [&str; 10] = [
     "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
 ];
 const NAME_COUNT: AtomicI16 = AtomicI16::new(0);
 
-#[derive(Clone)]
 pub struct StdStream {
     // pub for debugging purposes
-    pub buffer: Arc<Mutex<Vec<u8>>>,
-    from_file: bool,
+    pub write_buffer: Vec<u8>,
+    pub read_buffer: Vec<u8>,
 
     write_signal: Arc<tokio::sync::Notify>,
     // Debug purposes
@@ -25,10 +30,7 @@ pub struct StdStream {
 
 impl Debug for StdStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StdStream")
-            .field("id", &self.id)
-            .field("from_file", &self.from_file)
-            .finish()
+        f.debug_struct("StdStream").field("id", &self.id).finish()
     }
 }
 
@@ -41,8 +43,8 @@ impl Default for StdStream {
 impl StdStream {
     pub fn new() -> Self {
         Self {
-            buffer: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            from_file: false,
+            write_buffer: Vec::new(),
+            read_buffer: Vec::new(),
             write_signal: Arc::new(tokio::sync::Notify::new()),
             id: NAME[NAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize],
         }
@@ -73,87 +75,137 @@ impl StdStream {
 }
 
 impl std::io::Write for StdStream {
+    #[tracing::instrument(skip(self, buf))]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // debug!(buf = buf.len(), "StdStream::write");
-        let mut buffer = self.buffer.blocking_lock();
-        // debug!(buffer = buffer.len(), "StdStream::write locked");
-        buffer.extend_from_slice(buf);
-        // debug!(buffer = buffer.len(), "StdStream::write unlocked");
-        self.wake();
+        self.write_buffer.extend_from_slice(buf);
         Ok(buf.len())
     }
 
+    #[tracing::instrument(skip(self))]
     fn flush(&mut self) -> std::io::Result<()> {
-        debug!("StdStream::flush");
+        tracing::debug!(id = self.id, "StdStream::flush");
+        self.read_buffer.append(&mut self.write_buffer);
+        tracing::debug!(
+            id = self.id,
+            read_buffer_len = self.read_buffer.len(),
+            write_buffer_len = self.write_buffer.len(),
+            read_buffer_ptr = self.read_buffer.as_ptr() as usize,
+            "StdStream::flush"
+        );
+        self.write_buffer.clear();
+        self.wake();
         Ok(())
     }
 }
 
 impl tokio::io::AsyncRead for StdStream {
+    #[tracing::instrument(skip(self, cx, read_buf))]
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         read_buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        // Lock the buffer
-        let lock_future = self.buffer.lock();
-        tracing::debug!(
-            id = self.id,
-            "StdStream::poll_read, trying to locking buffer"
-        );
+        tracing::debug!(id = self.id, "StdStream::poll_read");
 
-        // Pin the future
-        futures::pin_mut!(lock_future);
+        if !self.read_buffer.is_empty() {
+            let len = std::cmp::min(read_buf.remaining(), self.read_buffer.len());
+            read_buf.put_slice(&self.read_buffer[..len]);
+            self.read_buffer.drain(..len); // Drain only after reading
+            tracing::debug!(
+                read_buffer_len = self.read_buffer.len(),
+                "StdStream::poll_read Ready"
+            );
+            return Poll::Ready(Ok(()));
+        }
 
-        // Poll the future
-        let result = match lock_future.poll(cx) {
-            std::task::Poll::Ready(mut internal_buffer) => {
-                debug!(
-                    id = self.id,
-                    internal_buffer = internal_buffer.len(),
-                    "StdStream::poll_read, buffer locked"
-                );
-                if internal_buffer.is_empty() {
-                    if self.from_file {
-                        // EOF
-                        std::task::Poll::Ready(Ok(()))
-                    } else {
-                        // I should pass the context to a notifier
-                        self.wake_when_write(cx);
-                        std::task::Poll::Pending
-                    }
-                } else {
-                    let len = std::cmp::min(read_buf.remaining(), internal_buffer.len());
-                    read_buf.put_slice(&internal_buffer[..len]);
-                    internal_buffer.drain(..len);
-                    debug!(
-                        internal_buffer = internal_buffer.len(),
-                        "StdStream::poll_read Ready"
-                    );
-                    std::task::Poll::Ready(Ok(()))
-                }
-            }
-            std::task::Poll::Pending => {
-                debug!("StdStream::poll_read pending");
-                std::task::Poll::Pending
-            }
-        };
-
-        debug!(result = ?result, "StdStream::poll_read releasing lock");
-        result
+        info!(
+                read_buffer_len = ?self.read_buffer.len(),
+                read_buffer_ptr = self.read_buffer.as_ptr() as usize,
+                "Reader Pending");
+        self.wake_when_write(cx);
+        return std::task::Poll::Pending;
     }
 }
 
 impl StdStream {
+    pub async fn split(self) -> (BufferWriter, AsyncBufferReader) {
+        let (sender, receiver) = mpsc::channel(1024); // Buffer size for the channel
+
+        let writer = BufferWriter {
+            buffer: self.write_buffer,
+            sender,
+        };
+
+        let reader = AsyncBufferReader {
+            buffer: self.read_buffer,
+            receiver,
+        };
+
+        (writer, reader)
+    }
+}
+
+// Implement the BufferWriter
+pub struct BufferWriter {
+    buffer: Vec<u8>,
+    sender: mpsc::Sender<Vec<u8>>,
+}
+
+impl std::io::Write for BufferWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.sender.try_send(self.buffer.clone()).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::Other, "Failed to send data to reader")
+        })?;
+
+        self.buffer.clear();
+
+        Ok(())
+    }
+}
+#[derive(Debug)]
+pub struct AsyncBufferReader {
+    buffer: Vec<u8>,
+    receiver: mpsc::Receiver<Vec<u8>>,
+}
+
+impl tokio::io::AsyncRead for AsyncBufferReader {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<tokio::io::Result<()>> {
+        // Poll the receiver for any available data
+        match Pin::new(&mut self.receiver).poll_recv(cx) {
+            Poll::Ready(Some(data)) => {
+                self.buffer.extend_from_slice(&data);
+            }
+            _ => {}
+        };
+
+        if self.buffer.is_empty() {
+            return Poll::Pending;
+        } else {
+            let len = std::cmp::min(buf.remaining(), self.buffer.len());
+            buf.put_slice(&self.buffer[..len]);
+            self.buffer.drain(..len);
+            return Poll::Ready(Ok(()));
+        }
+    }
+}
+
+impl AsyncBufferReader {
     pub async fn from_file(file: tokio::fs::File) -> std::io::Result<Self> {
         let mut buffer = Vec::new();
         let mut file = tokio::io::BufReader::new(file);
         file.read_to_end(&mut buffer).await?;
         Ok(Self {
-            buffer: Arc::new(Mutex::new(buffer)),
-            from_file: true,
-            id: NAME[NAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize],
-            write_signal: Arc::new(tokio::sync::Notify::new()),
+            buffer,
+            receiver: mpsc::channel(1024).1,
         })
     }
 }

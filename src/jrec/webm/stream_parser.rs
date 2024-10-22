@@ -14,14 +14,19 @@ use webm_iterable::{
 };
 
 use crate::{
-    jrec::streaming::{blocking::StdStreamingFile, std_stream::StdStream},
+    jrec::streaming::{
+        blocking::StdStreamingFile,
+        std_stream::{AsyncBufferReader, BufferWriter, StdStream},
+    },
     utils,
 };
+
+use super::TimedTagWriter;
 
 // Because of the nature of the webm_iterable crate, we need to do everything synchronously
 #[derive(Clone)]
 pub struct StreamParser {
-    output_writter: Arc<Mutex<Vec<WebmWriter<StdStream>>>>,
+    output_writer: Arc<Mutex<Vec<TimedTagWriter<BufferWriter>>>>,
     header: Arc<Vec<MatroskaSpec>>, // readonly
     source_file_absolute_path: PathBuf,
     stop_signal: Arc<std::sync::atomic::AtomicBool>,
@@ -40,8 +45,8 @@ impl StreamParser {
         let (tag_itr, header) =
             tokio::task::spawn_blocking(move || Self::init_read(source_file)).await??;
 
-        let output_streams: Arc<Mutex<Vec<WebmWriter<StdStream>>>> = Arc::new(Mutex::new(vec![]));
-        let output_streams_clone = output_streams.clone();
+        let output_writer = Arc::new(Mutex::<Vec<TimedTagWriter<BufferWriter>>>::new(vec![]));
+        let writer_clone = output_writer.clone();
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stop_signal = stop.clone();
 
@@ -120,15 +125,11 @@ impl StreamParser {
                             break 'cluster;
                         }
                     }
+                    let writers = writer_clone.lock().expect("trying to get writer");
 
-                    let mut writters = output_streams_clone
-                        .lock()
-                        .map_err(|e| anyhow::anyhow!("Failed to lock the target files, {:?}", e))?;
-
-                    for writer in writters.iter_mut() {
-                        info!(stream = ?writer.get_ref(), "Writing cluster interior");
+                    for writer in writers.iter() {
                         for tag in cluster_inteior.iter() {
-                            write_tag(writer, tag)?;
+                            writer.write(tag)?;
                         }
                     }
 
@@ -146,7 +147,7 @@ impl StreamParser {
         });
 
         Ok(StreamParser {
-            output_writter: output_streams,
+            output_writer,
             header: Arc::new(header),
             source_file_absolute_path: fs::canonicalize(source_file_path)?,
             stop_signal,
@@ -154,33 +155,28 @@ impl StreamParser {
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn spawn(&self) -> anyhow::Result<StdStream> {
+    pub async fn spawn(&self) -> anyhow::Result<AsyncBufferReader> {
         let header = self.header.clone();
         info!(header_len = ?header.len(), "Spawning stream");
         let stream = StdStream::new();
-        let stream_reader = stream.clone();
+        let (write, read) = stream.split().await;
         let writer = tokio::task::spawn_blocking(move || {
-            let mut writer = WebmWriter::new(stream);
+            let timed_writter = TimedTagWriter::new(write);
 
             for tag in header.iter() {
-                let tag_name = utils::mastroka::mastroka_spec_name(tag);
-                let inner_ref = writer.get_ref();
-                info!(tag_name,stream=?inner_ref, "Writing header tag to stream");
-                write_tag(&mut writer, tag)?;
+                timed_writter.write(tag).inspect_err(|e| {
+                    let tag_name = utils::mastroka::mastroka_spec_name(tag);
+                    error!(tag_name, "Error in writing the tag: {:?}", e);
+                })?;
             }
 
-            Ok::<_, anyhow::Error>(writer)
+            Ok::<_, anyhow::Error>(timed_writter)
         })
         .await??;
 
-        let mut writers = self
-            .output_writter
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock the target files, {:?}", e))?;
-        debug!(num_of_writer = writers.len(), "Adding writer to writers");
-        writers.push(writer);
+        self.output_writer.lock().expect("wont happen").push(writer);
 
-        Ok(stream_reader)
+        Ok(read)
     }
 
     pub fn reseek(
@@ -201,7 +197,7 @@ impl StreamParser {
     }
 
     pub fn stop(&self) {
-        self.output_writter
+        self.output_writer
             .lock()
             .expect("trying to clear output_writter")
             .clear();
@@ -250,7 +246,10 @@ impl StreamParser {
     }
 }
 
-pub fn write_tag(writer: &mut WebmWriter<StdStream>, tag: &MatroskaSpec) -> anyhow::Result<()> {
+pub fn write_tag(
+    writer: &mut WebmWriter<impl std::io::Write>,
+    tag: &MatroskaSpec,
+) -> anyhow::Result<()> {
     let tag_name = utils::mastroka::mastroka_spec_name(tag);
     if matches!(tag, MatroskaSpec::Segment(Master::Start)) {
         writer.write_advanced(tag, WriteOptions::is_unknown_sized_element())

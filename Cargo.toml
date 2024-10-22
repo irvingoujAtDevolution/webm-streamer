@@ -6,6 +6,7 @@ default-run = "webm-streamer"
 
 [dependencies]
 anyhow = "1.0.89"
+atomic-option = "0.1.2"
 axum = { version = "0.7.7", features = ["tracing", "ws"] }
 axum-extra = { version = "0.9.4", features = ["typed-header"] }
 bytes = "1.7.2"

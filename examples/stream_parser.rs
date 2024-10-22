@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use tokio::io::AsyncReadExt;
+use tracing::info;
 use webm_streamer::jrec::webm::stream_parser::StreamParser;
 
 #[tokio::main]
@@ -11,21 +12,35 @@ pub async fn main() -> anyhow::Result<()> {
         .with_line_number(true)
         .init();
 
+    let span = tracing::span!(tracing::Level::TRACE, "main");
+    let _enter = span.enter();
+
     let path = Path::new("recordings//21_11_41_54.webm");
     let stream_parser = StreamParser::new(path).await?;
 
-    let mut stream = stream_parser.spawn().await?;
+    let mut reader = stream_parser.spawn().await?;
+    info!("Spawned stream");
+    let mut out_file = std::fs::File::create("stream_parser.webm")?;
+    info!("Created file");
 
-    loop {
-        let mut buf = [0u8; 1024];
-        let read = stream.read(&mut buf).await?;
+    tokio::spawn(async move {
+        loop {
+            let mut buf = [0u8; 1024];
+            info!("Reading from stream");
+            let read = reader.read(&mut buf).await?;
 
-        if read == 0 {
-            break;
+            if read == 0 {
+                break;
+            }
+
+            out_file.write_all(&buf[..read])?;
+
+            info!("Read {} bytes", read);
         }
 
-        println!("Read: {:?}", read);
-    }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await??;
 
     Ok(())
 }

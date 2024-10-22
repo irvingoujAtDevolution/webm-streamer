@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
-import { startRecorder, TerminalHandle } from "./recorder";
+import { startRecorder, type TerminalHandle } from "./recorder";
 import { startComputerDraw } from "./drawer";
 
 function App() {
@@ -13,6 +13,7 @@ function App() {
 		undefined,
 	);
 	const [drawing, setDrawing] = useState(false);
+	const [openStreamer, setOpenStreamer] = useState(false);
 	const [stopDrawingHandle, setStopDrawingHandle] = useState({
 		stop: () => {},
 	});
@@ -84,7 +85,7 @@ function App() {
 			console.error("Canvas not found");
 			return;
 		}
-		startRecorder(canvasRef.current).then((handle) => {
+		startRecorder(canvasRef.current, openStreamer).then((handle) => {
 			setRecording(true);
 			setStopRecorder(handle);
 			handle?.onError(() => {
@@ -143,6 +144,16 @@ function App() {
 					{" "}
 					{drawing ? "Stop Drawing" : "Start Drawing"}
 				</button>
+				<label htmlFor="openStreamer">
+					<input
+						type="checkbox"
+						title="Open Streamer"
+						id="openStreamer"
+						checked={openStreamer}
+						onChange={(e) => setOpenStreamer(e.target.checked)}
+					/>
+					Open Streamer
+				</label>
 			</div>
 			<canvas
 				ref={canvasRef}

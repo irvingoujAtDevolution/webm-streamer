@@ -6,7 +6,7 @@ use tokio_util::codec::Framed;
 use tracing::{error, info, warn};
 
 use crate::{
-    jrec::{streaming::std_stream::StdStream, ws::websocket_compat},
+    jrec::{streaming::std_stream::{AsyncBufferReader, StdStream}, ws::websocket_compat},
     utils::state::AppState,
 };
 
@@ -24,7 +24,7 @@ pub async fn handle_realtime_stream(
             warn!("Not streaming, read as file, error: {:?}", e);
             let open_file = tokio::task::spawn(async move {
                 let file = tokio::fs::File::open(&file).await?;
-                let stream = StdStream::from_file(file).await?;
+                let stream = AsyncBufferReader::from_file(file).await?;
                 Ok::<_, anyhow::Error>(stream)
             });
 

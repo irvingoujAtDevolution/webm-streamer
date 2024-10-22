@@ -95,8 +95,8 @@ pub fn main() -> anyhow::Result<()> {
 
     let inner = writer.into_inner()?;
 
-    let buf = inner.buffer;
-    let buf_clone = buf.blocking_lock().clone();
+    let buf = inner.write_buffer;
+    let buf_clone = buf.clone();
 
     let reader = InMemoryReader::new(buf_clone);
 

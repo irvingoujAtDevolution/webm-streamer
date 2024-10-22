@@ -31,6 +31,7 @@ const openStreamingInPopup = (recording: string) => {
 
 export async function startRecorder(
 	canvas: HTMLCanvasElement,
+	openStreamer: boolean,
 ): Promise<TerminalHandle | undefined> {
 	if (!canvas) {
 		console.error("IronRDP canvas not found");
@@ -69,6 +70,10 @@ export async function startRecorder(
 	};
 
 	const closeWindow = await new Promise<() => void>((resolve) => {
+		if (!openStreamer) {
+			resolve(() => {});
+			return;
+		}
 		ws.onmessage = (e) => {
 			const blob = e.data as Blob;
 			const stream = blob.stream();

@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import "./App.css";
 import { WebSocketWrapper } from "./streaming";
 import type { VideoPlayerProps } from "./TestVideoPlayer";
@@ -10,6 +10,7 @@ export default function StreamingVideoPlayer({
 }: VideoPlayerProps) {
 	const videoRef = useRef<HTMLVideoElement | null>(null);
 	const websocket = useRef<WebSocketWrapper | null>(null);
+	const debugFile = useRef<Uint8Array>(new Uint8Array());
 	useEffect(() => {
 		if (!videoRef.current || !recordingUrl) return;
 
@@ -40,6 +41,13 @@ export default function StreamingVideoPlayer({
 				if (response?.type === "Chunk") {
 					console.log("Received chunk with size:", response.data.byteLength);
 					sourceBuffer.appendBuffer(response.data);
+
+					// append the data to the debug file
+					const data = new Uint8Array(debugFile.current.byteLength + response.data.byteLength);
+					data.set(debugFile.current);
+					data.set(response.data, debugFile.current.byteLength);
+					debugFile.current = data;
+
 				} else if (response?.type === "EOF") {
 					console.log("Received EOF");
 					mediaSource.endOfStream();

@@ -14,7 +14,7 @@ use tokio::{
 use tracing::info;
 
 use crate::{
-    jrec::{streaming::std_stream::StdStream, webm::stream_parser::StreamParser},
+    jrec::{streaming::std_stream::{AsyncBufferReader, StdStream}, webm::stream_parser::StreamParser},
     utils::FileWithLoggin,
 };
 
@@ -99,14 +99,14 @@ impl RecordingManager {
         recording_map.contains_key(&recording_id)
     }
 
-    pub async fn start_streaming(&self, recording_path: &Path) -> anyhow::Result<StdStream> {
+    pub async fn start_streaming(&self, recording_path: &Path) -> anyhow::Result<AsyncBufferReader> {
         let recording_path = tokio::fs::canonicalize(recording_path).await?;
 
         let mut recording_map = self.recording_map.lock().await;
         let Some(control) = recording_map.get_mut(&recording_path) else {
             // Not being recorded, just stream the file
             let file = open_read(&recording_path).await?;
-            return Ok(StdStream::from_file(file).await?);
+            return Ok(AsyncBufferReader::from_file(file).await?);
         };
 
         if control.streamer.is_none() {
